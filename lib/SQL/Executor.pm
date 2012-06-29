@@ -2,18 +2,17 @@ package SQL::Executor;
 use parent qw(Exporter);
 use strict;
 use warnings;
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 our @EXPORT_OK = qw(named_bind);
 
 use Class::Accessor::Lite (
-    ro => ['builder', 'dbh', 'allow_empty_condition', 'backup_callback'],
-    rw => ['callback', 'id_generator'],
+    ro => ['builder', 'dbh', 'allow_empty_condition', 'backup_callback', 'check_empty_bind'],
+    rw => ['callback'],
 );
 use SQL::Maker;
 use Carp qw();
 use SQL::Executor::Iterator;
-use Data::UUID;
 
 =head1 NAME
 
@@ -56,8 +55,15 @@ $option_href: option
 
 available option is as follows
 
-allow_empty_condition (BOOL default 1): allow empty condition(where) in select/delete/update
-callback (coderef): specify callback coderef. callback is called for each select* method
+=over 4
+
+=item * allow_empty_condition (BOOL default 1): allow empty condition(where) in select/delete/update
+
+=item * callback (coderef): specify callback coderef. callback is called for each select* method
+
+=item * check_empty_bind (BOOL default 0): if TRUE(1), select*_named() do not accept unbound parameter, see named_bind() for detail.
+
+=back
 
 These callbacks are useful for making row object.
 
@@ -83,6 +89,7 @@ sub new {
         builder               => $builder,
         dbh                   => $dbh,
         allow_empty_condition => defined $option_href->{allow_empty_condition} ? $option_href->{allow_empty_condition} : 1,
+        check_empty_bind      => !!$option_href->{check_empty_bind},
         callback              => $option_href->{callback},
         backup_callback       => $option_href->{callback},
     };
@@ -187,7 +194,7 @@ $table_name is used for callback.
 
 sub select_row_named {
     my ($self, $sql, $params_href, $table_name) = @_;
-    my ($new_sql, @binds) = named_bind($sql, $params_href);
+    my ($new_sql, @binds) = named_bind($sql, $params_href, $self->check_empty_bind);
     return $self->select_row_by_sql($new_sql, \@binds, $table_name);
 }
 
@@ -205,7 +212,7 @@ $table_name is used for callback.
 
 sub select_all_named {
     my ($self, $sql, $params_href, $table_name) = @_;
-    my ($new_sql, @binds) = named_bind($sql, $params_href);
+    my ($new_sql, @binds) = named_bind($sql, $params_href, $self->check_empty_bind);
     return $self->select_all_by_sql($new_sql, \@binds, $table_name);
 }
 
@@ -222,12 +229,12 @@ $table_name is used for callback.
 
 sub select_itr_named {
     my ($self, $sql, $params_href, $table_name) = @_;
-    my ($new_sql, @binds) = named_bind($sql, $params_href);
+    my ($new_sql, @binds) = named_bind($sql, $params_href, $self->check_empty_bind);
     return $self->select_itr_by_sql($new_sql, \@binds, $table_name);
 }
 
 
-=head2 named_bind($sql, $params_href)
+=head2 named_bind($sql, $params_href, $check_empty_bind)
 
 returns sql which is executable in execute_query() and parameters for bind.
 
@@ -235,17 +242,26 @@ returns sql which is executable in execute_query() and parameters for bind.
   # $sql   =>  "SELECT * FROM SOME_TABLE WHERE id = ?"
   # @binds => (123)
 
+parameter $check_empty_bind is optional. By default (or set $check_empty_bind=0), 
+named_bind() accepts unbound parameter like this,
+
+  my ($sql, @binds) = named_bind("SELECT * FROM SOME_TABLE WHERE id = :id", { });# do not bind :id
+  # $sql   =>  "SELECT * FROM SOME_TABLE WHERE id = ?"
+  # @binds => (undef)
+
+if $check_empty_bind is 1, named_bind() dies when unbound parameter is specified.
+
 =cut
 
 # this code is taken from Teng's search_named()
 sub named_bind {
-    my ($sql, $params_href) = @_;
+    my ($sql, $params_href, $check_empty_bind) = @_;
 
     my %named_bind = %{ $params_href };
     my @binds;
     my $new_sql = $sql;
     $new_sql =~ s{:([A-Za-z_][A-Za-z0-9_]*)}{
-        Carp::croak("'$1' does not exist in bind hash") if !exists $named_bind{$1};
+        Carp::croak("'$1' does not exist in bind hash") if ( !exists $named_bind{$1} && !!$check_empty_bind );
         if ( ref $named_bind{$1} && ref $named_bind{$1} eq "ARRAY" ) {
             push @binds, @{ $named_bind{$1} };
             my $tmp = join ',', map { '?' } @{ $named_bind{$1} };
@@ -296,7 +312,7 @@ sub select_row_by_sql {
     my $row = $dbh->selectrow_hashref($sql, undef, @{ $binds_aref || [] } );
     my $callback = $self->callback;
     if ( defined $callback && defined $row ) {
-        return $callback->($self, $row, $table_name, $self->_select_id);
+        return $callback->($self, $row, $table_name, $self->select_id);
     }
     return $row;
 }
@@ -318,7 +334,7 @@ sub select_all_by_sql {
     my @rows = @{ $dbh->selectall_arrayref($sql, { Slice => {} }, @{ $binds_aref || [] }) };
     my $callback = $self->callback;
     if( defined $callback ) {
-        my $select_id = $self->_select_id;
+        my $select_id = $self->select_id;
         my @result = map{ $callback->($self, $_, $table_name, $select_id) } @rows;
         return @result;
     }
@@ -342,7 +358,7 @@ sub select_itr_by_sql {
     my $dbh = $self->dbh;
     my $sth = $dbh->prepare($sql);
     $sth->execute(@{ $binds_aref || [] });
-    my $select_id = defined $self->callback ? $self->_select_id : undef; #select_id does not need if callback is disabled.
+    my $select_id = defined $self->callback ? $self->select_id : undef; #select_id does not need if callback is disabled.
     return SQL::Executor::Iterator->new($sth, $table_name, $self, $select_id);
 }
 
@@ -494,7 +510,7 @@ execute query with named placeholder and returns statement handler($sth).
 sub execute_query_named {
     my ($self, $sql, $params_href) = @_;
     my $dbh = $self->dbh;
-    my ($new_sql, @binds) = named_bind($sql, $params_href);
+    my ($new_sql, @binds) = named_bind($sql, $params_href, $self->check_empty_bind);
     my $sth = $dbh->prepare($new_sql);
     $sth->execute(@binds);
     return $sth;
@@ -541,13 +557,16 @@ sub _is_empty_where {
     ;
 }
 
-# generate select_id
-sub _select_id {
+=head2 select_id()
+
+generate id for select statament. but by default, id is not generated.
+If you want to generate id, please override
+
+=cut
+
+sub select_id {
     my ($self) = @_;
-    if( !defined $self->id_generator ) {
-        $self->id_generator( Data::UUID->new() );
-    }
-    return $self->id_generator->create_str;
+    return;
 }
 
 1;

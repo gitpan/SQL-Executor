@@ -24,11 +24,10 @@ no_index:
 requires:
   Class::Accessor::Lite: 0
   DBI: 0
-  Data::UUID: 0
   SQL::Maker: 0
   parent: 0
 resources:
   homepage: https://github.com/tsucchi/p5-SQL-Executor/tree
   license: http://dev.perl.org/licenses/
   repository: git://github.com/tsucchi/p5-SQL-Executor.git
-version: 0.10
+version: 0.11

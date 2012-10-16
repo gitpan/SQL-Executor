@@ -30,4 +30,4 @@ resources:
   homepage: https://github.com/tsucchi/p5-SQL-Executor/tree
   license: http://dev.perl.org/licenses/
   repository: git://github.com/tsucchi/p5-SQL-Executor.git
-version: 0.11
+version: 0.12

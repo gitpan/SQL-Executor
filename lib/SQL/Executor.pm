@@ -2,7 +2,7 @@ package SQL::Executor;
 use parent qw(Exporter);
 use strict;
 use warnings;
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 our @EXPORT_OK = qw(named_bind);
 
@@ -13,6 +13,7 @@ use Class::Accessor::Lite (
 use SQL::Maker;
 use Carp qw();
 use SQL::Executor::Iterator;
+
 
 =head1 NAME
 
@@ -540,6 +541,24 @@ sub restore_callback {
     $self->callback($self->backup_callback);
 }
 
+=head2 last_insert_id(@args)
+
+If driver is mysql, return $dbh->{mysql_insertid}.If driver is SQLite, return $dbh->sqlite_last_insert_rowid.
+If other driver is used, return $dbh->last_insert_id(@args)
+
+=cut
+
+sub last_insert_id {
+    my ($self, @args) = @_;
+    if( $self->dbh->{Driver}->{Name} eq 'mysql' ) {
+        return $self->dbh->{mysql_insertid};
+    }
+    if( $self->dbh->{Driver}->{Name} eq 'SQLite' ) {
+        return $self->dbh->sqlite_last_insert_rowid;
+    }
+
+    return $self->dbh->last_insert_id(@args);
+}
 
 
 sub _execute_and_finish {

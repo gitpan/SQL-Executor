@@ -33,6 +33,7 @@ t/06_delete.t
 t/07_update.t
 t/08_insert_multi.t
 t/09_execute_query_named.t
+t/10_select_with_handler.t
 t/Row.pm
 t/Util.pm
 xt/02_perlcritic.t

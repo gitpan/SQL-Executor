@@ -2,7 +2,7 @@ package SQL::Executor;
 use parent qw(Exporter);
 use strict;
 use warnings;
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 our @EXPORT_OK = qw(named_bind);
 
@@ -305,7 +305,7 @@ if $check_empty_bind is 1, named_bind() dies when unbound parameter is specified
 sub named_bind {
     my ($sql, $params_href, $check_empty_bind) = @_;
 
-    my %named_bind = %{ $params_href };
+    my %named_bind = %{ $params_href || {} };
     my @binds;
     my $new_sql = $sql;
     $new_sql =~ s{:([A-Za-z_][A-Za-z0-9_]*)}{
@@ -357,6 +357,7 @@ this method returns hash ref and it is the same as return value in DBI's selectr
 sub select_row_by_sql {
     my ($self, $sql, $binds_aref, $table_name) = @_;
     my $row = undef;
+    local $Carp::Internal{(__PACKAGE__)} = 1;
     try {
         $row = $self->_select_row_by_sql($sql, $binds_aref, $table_name);
     } catch {
@@ -390,6 +391,7 @@ this method returns array that is composed of hash refs. (hash ref is same as DB
 sub select_all_by_sql {
     my ($self, $sql, $binds_aref, $table_name) = @_;
     my @result = ();
+    local $Carp::Internal{(__PACKAGE__)} = 1;
     try {
         @result = $self->_select_all_by_sql($sql, $binds_aref, $table_name);
     } catch {
@@ -425,6 +427,7 @@ Iterator is L<SQL::Executor::Iterator> object.
 sub select_itr_by_sql {
     my ($self, $sql, $binds_aref, $table_name) = @_;
     my $itr = undef;
+    local $Carp::Internal{(__PACKAGE__)} = 1;
     try {
         $itr = $self->_select_itr_by_sql($sql, $binds_aref, $table_name);
     } catch {
@@ -595,6 +598,7 @@ execute query and returns statement handler($sth).
 sub execute_query {
     my ($self, $sql, $binds_aref) = @_;
     my $sth = undef;
+    local $Carp::Internal{(__PACKAGE__)} = 1;
     try {
         $self->_execute_query($sql, $binds_aref);
     } catch {
@@ -618,6 +622,7 @@ execute query with named placeholder and returns statement handler($sth).
 
 sub execute_query_named {
     my ($self, $sql, $params_href) = @_;
+    local $Carp::Internal{(__PACKAGE__)} = 1;
     my $sth = undef;
     my ($new_sql, @binds) = named_bind($sql, $params_href, $self->check_empty_bind);
     try {
@@ -704,8 +709,8 @@ Error <I>$error_message</I> sql: <I>$sql</I>, binds: [<I>$binds_aref</I>]\n
 
 sub handle_exception {
     my ($self, $sql, $binds_aref, $err) = @_;
-    my $binds_text = join(',', map{ defined $_ ? $_ : 'NULL' } @{ $binds_aref || [] });
-    my $message = "Error $_ sql: $sql, binds: [$binds_text]\n";
+    my $binds_text = join(',', map{ defined $_ ? "'$_'" : 'NULL' } @{ $binds_aref || [] });
+    my $message = "Error $err sql: $sql, binds: [$binds_text]\n";
     Carp::croak($message);
 }
 
